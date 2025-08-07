@@ -1,0 +1,348 @@
+substitutions:
+  device_name: esp8266-water-heater
+
+esphome:
+  name: ${device_name}
+  friendly_name: ESP8266 Water Heater Reley
+  name_add_mac_suffix: False
+  project: 
+    version: 0.1.8
+    name: "IevgenGubareni.WaterHeater-ESP8266-12F"
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(wanted_temp_number).publish_state(id(wanted_temperature));
+          id(one_heater_temp_number).publish_state(id(one_heater_temperature));
+
+# GPIO SCHEME (ESP8266-12F)
+#======================================
+# RESET
+# ADC0
+# EN
+# GPIO16 - RELAY 1, 2    // pin is high at BOOT
+# GPIO14 - ONE WIRE
+# GPIO12 - RELAY 3, 4
+# GPIO13 
+# GPIO11        // FLASH
+# GPIO07        // FLASH
+# GPIO09        // FLASH // pin is high at BOOT
+# GPIO10        // FLASH // pin is high at BOOT
+# GPIO08        // FLASH
+# GPIO06        // FLASH
+# GPIO15                 // boot failure if pulled HIGH
+# GPIO02 - BUTTON_NEXT   // pin is high at BOOT, boot failure if pulled LOW
+# GPIO00 - BUTTON_UP     // boot failure if pulled LOW
+# GPIO04 - SDA
+# GPIO05 - SCL           
+# GPIO03        // UART RX   // pin is high at BOOT
+# GPIO01        // UART TX   // pin is high at BOOT, boot failure if pulled LOW
+#======================================
+
+esp8266:
+  board: esp12e
+  restore_from_flash: True
+  early_pin_init: False
+
+globals:
+  - id: wanted_temperature
+    type: int
+    restore_value: True
+    initial_value: "55"
+  - id: one_heater_temperature
+    type: int
+    restore_value: True
+    initial_value: "45"
+  - id: position
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: last_activity
+    type: unsigned long
+    restore_value: false
+    initial_value: '0'
+  - id: dimmed
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  #encryption:
+    #key: "Ie5xO3BVPnuAFAsqPvTbRTcfeHJ3rcI61xeVKr7N4Tw="
+
+ota:
+  - platform: esphome
+    password: !secret ota_password_esp8266-water-heater
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  use_address: esp8266-water-heater.local
+
+text_sensor:
+  - platform: template
+    name: "Free Heap"
+    lambda: |-
+      return to_string(ESP.getFreeHeap()) + " bytes";
+    update_interval: 60s
+
+i2c:
+  scl: GPIO05
+  sda: GPIO04
+  id: i2c_bus
+
+display:
+  - platform: ssd1306_i2c
+    model: SSD1306_128X32
+    invert: False
+    id: oled_display
+    rotation: 0
+    pages:
+      - id: page_1
+        lambda: |-
+          std::string status = "";
+          if (id(heating_switch).state) {
+            status += "*";
+            if (id(relay_1_2).state && id(relay_3_4).state) {
+              status += "••";
+            } else if (id(relay_1_2).state || id(relay_3_4).state) {
+              status += "•";
+            }
+          }
+          it.printf(0, 0, id(big_font), "T:%.1f %s", id(current_temp).state, status.c_str());
+      - id: page_2
+        lambda: |-
+          it.printf(0, 0, id(big_font), "W:%d", id(wanted_temperature));
+      - id: page_3
+        lambda: |-
+          it.printf(0, 0, id(big_font), "1H:%d", id(one_heater_temperature));
+      - id: page_info
+        lambda: |-
+          it.printf(0, 0, id(big_font), "Heat: %s", id(heating_switch).state ? "ON" : "OFF");
+      - id: page_clear
+        lambda: |-
+          // Порожня сторінка для вимкнення дисплея
+
+font:
+  - id: big_font
+    size: 20
+    file: "https://github.com/IdreesInc/Monocraft/releases/download/v3.0/Monocraft.ttf"
+
+one_wire:
+  - platform: gpio
+    pin: 14
+    id: water_temperature
+    # active_pullup: True
+
+sensor:
+  - platform: dallas_temp
+    name: temperature
+    id: current_temp
+    update_interval: 120s
+    one_wire_id: water_temperature
+    unit_of_measurement: °C
+    resolution: 12
+
+button:
+  - platform: restart
+    id: restart_button
+    name: Restart board
+
+switch:
+  - platform: gpio
+    pin: GPIO12
+    id: relay_3_4
+    name: "Relay 3 & 4"
+    restore_mode: ALWAYS_OFF
+    inverted: false
+
+  - platform: gpio
+    pin: GPIO16
+    id: relay_1_2
+    name: "Relay 1 & 2"
+    restore_mode: ALWAYS_OFF
+    inverted: False
+
+  - platform: template
+    name: "Heating On/Off"
+    id: heating_switch
+    restore_mode: ALWAYS_OFF
+    optimistic: true
+    turn_on_action:
+      - logger.log: "Heating turned ON"
+      - script.execute: show_info_page_script
+    turn_off_action:
+      - logger.log: "Heating turned OFF"
+      - script.execute: show_info_page_script
+
+binary_sensor:
+  - platform: gpio
+    pin: 
+      number: GPIO02
+      inverted: true
+      mode: INPUT_PULLUP
+    name: "Button NEXT"
+    id: button_next
+    filters:
+      - delayed_on: 20ms
+      - delayed_off: 50ms
+    on_release:
+      then:
+        - lambda: |-
+            if (id(dimmed)) {
+              id(oled_display).show_page(id(page_1));
+              id(dimmed) = false;
+              return;
+            }
+            id(last_activity) = millis();
+            id(position) += 1;
+            if (id(position) > 2) {
+              id(position) = 0;
+            }
+            switch (id(position)) {
+              case 0: id(oled_display).show_page(id(page_1)); break;
+              case 1: id(oled_display).show_page(id(page_2)); break;
+              default: id(oled_display).show_page(id(page_3)); break;
+            }
+            ESP_LOGD("main", "Position changed to %d", id(position));
+
+  - platform: gpio
+    pin: 
+      number: GPIO00
+      inverted: true
+      mode: INPUT_PULLUP
+    name: "Button UP"
+    id: button_up
+    filters:
+      - delayed_on: 20ms
+      - delayed_off: 50ms
+    on_release:
+      then:
+        - lambda: |-
+            if (id(dimmed)) {
+              id(oled_display).show_page(id(page_1));
+              id(dimmed) = false;
+              return;
+            }
+            id(last_activity) = millis();
+            if (id(position) == 0) {
+              id(heating_switch).toggle();
+            } else if (id(position) == 1) {
+              id(wanted_temperature) += 5;
+              if (id(wanted_temperature) > 85) {
+                id(wanted_temperature) = 25;
+              }
+              id(wanted_temp_number).publish_state(id(wanted_temperature));
+              id(oled_display).show_page(id(page_2));
+              ESP_LOGD("main", "Wanted temp: %d °C", id(wanted_temperature));
+            } else if (id(position) == 2) {
+              id(one_heater_temperature) += 5;
+              if (id(one_heater_temperature) > 85) {
+                id(one_heater_temperature) = 25;
+              }
+              id(one_heater_temp_number).publish_state(id(one_heater_temperature));
+              id(oled_display).show_page(id(page_3));
+              ESP_LOGD("main", "One-heater temp: %d °C", id(one_heater_temperature));
+            }
+
+number:
+  - platform: template
+    name: "Wanted Temperature"
+    id: wanted_temp_number
+    min_value: 25
+    max_value: 85
+    step: 5
+    unit_of_measurement: "°C"
+    optimistic: true
+    on_value:
+      then:
+        - lambda: |-
+            id(wanted_temperature) = (int)x;
+            id(last_activity) = millis();
+            id(dimmed) = false;
+            id(oled_display).show_page(id(page_2));
+            ESP_LOGD("main", "Wanted temperature updated via HA: %d °C", id(wanted_temperature));
+
+  - platform: template
+    name: "One Heater Temperature"
+    id: one_heater_temp_number
+    min_value: 25
+    max_value: 85
+    step: 5
+    unit_of_measurement: "°C"
+    optimistic: true
+    on_value:
+      then:
+        - lambda: |-
+            id(one_heater_temperature) = (int)x;
+            id(last_activity) = millis();
+            id(dimmed) = false;
+            id(oled_display).show_page(id(page_3));
+            ESP_LOGD("main", "One-heater temperature updated via HA: %d °C", id(one_heater_temperature));
+
+script:
+  - id: heater_control_script
+    mode: restart
+    then:
+      - lambda: |-
+          // Якщо heating_switch вимкнено — вимкнути обидва реле і завершити
+          if (!id(heating_switch).state) {
+            id(relay_3_4).turn_off();
+            id(relay_1_2).turn_off();
+            ESP_LOGD("main", "Heating OFF: both relays OFF");
+            return;
+          }
+          float temp = id(current_temp).state;
+          int wanted = id(wanted_temperature);
+          int one_heater = id(one_heater_temperature);
+
+          if (temp > wanted) {
+            id(relay_3_4).turn_off();
+            id(relay_1_2).turn_off();
+            ESP_LOGD("main", "Temp > wanted: both relays OFF");
+          } else if (temp > one_heater && temp <= wanted) {
+            id(relay_1_2).turn_off();
+            id(relay_3_4).turn_on();
+            ESP_LOGD("main", "one_heater < temp <= wanted: relay_3_4 ON, relay_1_2 OFF");
+          } else if (temp <= one_heater) {
+            id(relay_3_4).turn_on();
+            id(relay_1_2).turn_on();
+            ESP_LOGD("main", "temp <= one_heater: both relays ON");
+          }
+
+  - id: show_info_page_script
+    mode: restart
+    then:
+      - lambda: |-
+          id(oled_display).show_page(id(page_info));
+      - delay: 10s
+      - lambda: |-
+          id(oled_display).show_page(id(page_1));
+
+interval:
+  - interval: 3600s
+    then:
+      - lambda: |-
+          id(wanted_temp_number).publish_state(id(wanted_temperature));
+          id(one_heater_temp_number).publish_state(id(one_heater_temperature));
+  - interval: 30s
+    then:
+      - lambda: |-
+          // Через 60 секунд після активності вимкнути дисплей (page_clear)
+          if (!id(dimmed) && (millis() - id(last_activity)) > 60000) {
+            id(oled_display).show_page(id(page_clear));
+            id(dimmed) = true;
+            ESP_LOGD("main", "Display dimmed (page_clear)");
+          }
+          // Через 30 секунд після активності показати page_1
+          else if (!id(dimmed) && (millis() - id(last_activity)) > 30000) {
+            id(oled_display).show_page(id(page_1));
+          }
+  - interval: 10s
+    then:
+      - script.execute: heater_control_script
