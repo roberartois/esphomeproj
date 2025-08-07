@@ -1,5 +1,3 @@
----
-
 # ESP Water Heater Controller
 
 ## 🇬🇧 English
@@ -95,3 +93,4 @@
 ---
 
 © 2025 Ievgen Gubareni. License: MIT.
+
