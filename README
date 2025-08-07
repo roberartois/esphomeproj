@@ -1,0 +1,97 @@
+---
+
+# ESP Water Heater Controller
+
+## 🇬🇧 English
+
+### 🔧 Features
+- Dual-stage water heater control via relays  
+- Temperature monitoring with DS18B20  
+- OLED display with multiple pages and auto-dimming  
+- Physical buttons for navigation and temperature adjustment  
+- Configurable target and threshold temperatures  
+- Automatic heater logic based on current temperature  
+- Two integration modes:  
+  - Native ESPHome API (Home Assistant)  
+  - MQTT-based control and telemetry  
+- OTA updates supported  
+- Two hardware variants:
+  - `esp8266_12F_Version/` — for ESP8266-12F  
+  - `esp32_C3_Version/` — for ESP32-C3 Super Mini
+
+---
+
+### 📦 Installation
+
+1. Install [ESPHome](https://esphome.io/) via CLI or Dashboard  
+2. Clone this repository  
+3. Choose your board folder (`esp8266_12F_Version/` or `esp32_C3_Version/`)  
+4. Create a `secrets.yaml` file with your Wi-Fi, OTA, and MQTT credentials  
+5. Flash the firmware via USB or OTA:
+   ```
+   esphome run <your_board>.yaml
+   ```
+
+---
+
+### 🧠 How It Works
+
+- Reads water temperature every 120 seconds  
+- Displays current status, target, and threshold values  
+- Buttons allow switching pages and adjusting temperatures  
+- Heater logic:
+  - If temp > target → both relays OFF  
+  - If temp between threshold and target → one relay ON  
+  - If temp ≤ threshold → both relays ON  
+- Display dims after inactivity  
+- MQTT mode publishes state and accepts commands via configurable topics
+
+---
+
+## 🇺🇦 Українською
+
+### 🔧 Можливості
+- Двоступеневе керування бойлером через реле  
+- Вимірювання температури DS18B20  
+- OLED-дисплей з кількома сторінками та автоматичним затемненням  
+- Кнопки для навігації та зміни параметрів  
+- Налаштовувані пороги температури  
+- Автоматична логіка нагріву  
+- Два режими інтеграції:
+  - Через ESPHome API (Home Assistant)  
+  - Через MQTT (керування та телеметрія)  
+- Підтримка OTA-оновлень  
+- Дві апаратні реалізації:
+  - `esp8266_12F_Version/` — для ESP8266-12F  
+  - `esp32_C3_Version/` — для ESP32-C3 Super Mini
+
+---
+
+### 📦 Інсталяція
+
+1. Встановіть [ESPHome](https://esphome.io/)  
+2. Клонуйте репозиторій  
+3. Оберіть папку з вашою платою (`esp8266_12F_Version/` або `esp32_C3_Version/`)  
+4. Створіть `secrets.yaml` з даними Wi-Fi, OTA та MQTT  
+5. Прошивка через USB або OTA:
+   ```
+   esphome run <ваша_плата>.yaml
+   ```
+
+---
+
+### 🧠 Принцип роботи
+
+- Зчитує температуру води кожні 120 секунд  
+- Відображає поточний стан, цільову та порогову температуру  
+- Кнопки дозволяють перемикати сторінки та змінювати значення  
+- Логіка нагріву:
+  - Температура > цільової → реле вимкнено  
+  - Температура між порогом і ціллю → одне реле увімкнено  
+  - Температура ≤ порогу → обидва реле увімкнено  
+- Дисплей затемнюється після бездіяльності  
+- У режимі MQTT пристрій публікує стан і приймає команди через топіки
+
+---
+
+© 2025 Ievgen Gubareni. License: MIT.
